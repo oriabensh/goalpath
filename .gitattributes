@@ -1,1 +1,5 @@
 * text=auto eol=lf
+
+# Vendored third-party files are stored byte-exact: their SRI hashes in index.html
+# must match upstream (leaflet.css ships with CRLF line endings).
+frontend/vendor/** -text

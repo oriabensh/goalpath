@@ -188,6 +188,7 @@ Server → client:
 | 50 | Auto-walk uses the same setPosition → WebSocket path and follows the live route | Demo exercises trimming, rerouting and goal detection end to end. |
 | 51 | Walking distance in HUD | What the player actually needs; straight line kept for transparency. |
 | 52 | Trim to the nearest segment in the first in-threshold run (refines #47) | Passed corners are dropped; a route that doubles back still can't skip ahead. |
+| 53 | Vendored files stored byte-exact (`-text` in `.gitattributes`) | LF normalization changed `leaflet.css` and broke its SRI hash on fresh clones. |
 
 ## Local development without Docker (Windows)
 
