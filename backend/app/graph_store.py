@@ -12,6 +12,11 @@ GRAPH_PATH = Path(__file__).resolve().parents[1] / "data" / "tel_aviv_walk.graph
 class OutsideCoverageError(Exception):
     """The player (plus the goal radius) is outside the bundled map area."""
 
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code  # "outside_coverage" or "near_edge"
+        self.message = message
+
 
 @lru_cache
 def get_graph() -> nx.MultiDiGraph:
@@ -39,9 +44,17 @@ def is_covered(lat: float, lon: float, radius_m: float) -> bool:
 
 
 def ensure_covered(lat: float, lon: float, radius_m: float) -> None:
-    if not is_covered(lat, lon, radius_m):
-        min_lat, min_lon, max_lat, max_lon = get_bounds()
+    if is_covered(lat, lon, radius_m):
+        return
+    min_lat, min_lon, max_lat, max_lon = get_bounds()
+    if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
         raise OutsideCoverageError(
-            f"Position ({lat:.5f}, {lon:.5f}) with a {radius_m:.0f} m radius is outside the covered area "
-            f"(central Tel Aviv-Yafo: lat {min_lat:.4f}..{max_lat:.4f}, lon {min_lon:.4f}..{max_lon:.4f})."
+            "near_edge",
+            f"Too close to the edge of the covered area (central Tel Aviv): the goal radius "
+            f"({radius_m:.0f} m) must fit inside the map.",
         )
+    raise OutsideCoverageError(
+        "outside_coverage",
+        f"Position ({lat:.5f}, {lon:.5f}) is outside the covered area "
+        f"(central Tel Aviv-Yafo: lat {min_lat:.4f}..{max_lat:.4f}, lon {min_lon:.4f}..{max_lon:.4f}).",
+    )

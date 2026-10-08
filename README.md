@@ -10,19 +10,23 @@ A web-based navigation game: walk your soccer ball to a randomly placed goal alo
 - **Goal generation**: on game start, a static goal marker is placed within a configurable radius of the player.
 - **Shortest path**: the shortest walkable path from player to goal is computed and drawn on the map.
 - **Goal detection**: "Goal reached" feedback when the player is within a proximity threshold.
-- **Dynamic re-routing (bonus)**: the route updates when the player deviates from it.
+- **Dynamic re-routing (bonus)**: planned (step 6). The route will update when the player deviates from it.
 - **Coverage**: central Tel Aviv-Yafo (pre-bundled walk graph, works fully offline). Outside it, the game shows a clear error.
-- **Demo mode**: off by default, marked with a DEMO badge. Click the map to place the ball and use the arrow keys to move it 10 m per press, for demoing on a stationary laptop.
+- **Demo mode**: off by default, marked with a DEMO badge. Before the game, click the map to set the start point; during the game, arrow keys walk the ball 10 m per press. For demoing on a stationary laptop.
 
 ## Quick start
 
 **Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ```bash
-docker compose up
+docker compose up --build -d   # start (first build takes a few minutes)
+docker compose ps              # backend should be "healthy"
+docker compose down            # stop
 ```
 
-Open <http://localhost:8080> (or your `FRONTEND_PORT`) and allow location access when the browser asks.
+Open <http://localhost:8080> (or your `FRONTEND_PORT`) and allow location access when the browser asks. The API runs on <http://localhost:8000> (fixed port). No `.env` is needed; copy `.env.example` to `.env` to override the defaults.
+
+Run the tests in the container: `docker compose run --rm backend python -m pytest`.
 
 ## Troubleshooting location
 
@@ -46,8 +50,8 @@ All parameters are set through environment variables (see `.env.example`).
 | `GOAL_THRESHOLD_M` | `20` | Distance (m) at which the goal counts as reached (must be < `GOAL_MIN_DISTANCE_M`) |
 | `REROUTE_THRESHOLD_M` | `25` | Deviation (m) from the path that triggers a re-route |
 | `GOAL_MAX_ATTEMPTS` | `20` | Goal placement retries before giving up |
-| `BACKEND_PORT` | `8000` | FastAPI port |
-| `FRONTEND_PORT` | `8080` | Web page port |
+| `FRONTEND_PORT` | `8080` | Web page port (the backend is fixed at `8000`) |
+| `LOG_LEVEL` | `INFO` | Backend log level (`DEBUG` adds per-position logs) |
 
 ## Architecture
 
@@ -91,7 +95,7 @@ Frontend (`frontend/`, no build): `index.html`, `app.js` (map, geolocation, WebS
 |---|---|---|
 | `GET` | `/health` | `{"status": "ok", "graph_nodes": n}` |
 | `GET` | `/api/coverage` | Covered area bounds: `min_lat`, `min_lon`, `max_lat`, `max_lon` |
-| `POST` | `/api/games` | Body `{lat, lon}`. Returns `session_id`, `player`, `goal`, `route` (list of `[lat, lon]`), `route_length_m`, `coverage_bounds`. `422` for invalid input or outside coverage; `503` if no goal could be placed |
+| `POST` | `/api/games` | Body `{lat, lon}`. Returns `session_id`, `player`, `goal`, `route` (list of `[lat, lon]`), `route_length_m`, `coverage_bounds`. `422` for invalid input, or `{"detail": {"code": "outside_coverage" \| "near_edge", "message"}}`; `503` if no goal could be placed |
 | `WS` | `/ws/games/{session_id}` | Live position stream (below). Unknown session → close code `4404` |
 
 Interactive docs: <http://localhost:8000/docs>.
@@ -127,8 +131,8 @@ Server → client:
 | 5 | Location via browser Geolocation API (`watchPosition`) streamed over WebSocket | A container can't access host location hardware; the browser is the bridge. |
 | 6 | Goal detection is server-side | Single source of truth for game state. |
 | 7 | Goal: uniform random point in radius, min distance, snapped to nearest walkable node, guaranteed reachable | Fair placement, avoids trivial goals, never unreachable. |
-| 8 | Re-route only when deviation exceeds a configurable threshold | Avoids recomputing on GPS jitter. |
-| 9 | Demo mode: labeled, off by default (auto-walk or arrow keys) | Demo on a stationary laptop; real location stays the default. |
+| 8 | Re-route only when deviation exceeds a configurable threshold — planned (step 6) | Avoids recomputing on GPS jitter. |
+| 9 | Demo mode: labeled, off by default (click/arrow keys; auto-walk optional, not built yet) | Demo on a stationary laptop; real location stays the default. |
 | 10 | ~~Road graph downloaded on game start and cached; Tel Aviv pre-bundled~~ (superseded by #19) | Fast repeat starts; works offline for the main area. |
 | 11 | All parameters from environment variables | Configurable without code changes. |
 | 12 | Run locally with `docker compose up`; no paid services or API keys | One-command setup, free to run. |
@@ -155,6 +159,14 @@ Server → client:
 | 33 | Route starts at the player's real position (dashed connector) | The ball stays at the true location; the line visibly connects it to the street. |
 | 34 | Walked distance ignores steps under GPS accuracy | Stationary jitter doesn't inflate the distance. |
 | 35 | Demo positions use the same pipeline as real ones | Demo tests the real system, not a separate path. |
+| 36 | Backend port fixed at 8000 | The frontend calls it directly; reverse proxy is the next step. |
+| 37 | Structured logging with `LOG_LEVEL` | Observability without per-position noise. |
+| 38 | Two containers (FastAPI + nginx) | Separate concerns; static files served efficiently. |
+| 39 | Healthcheck + `depends_on: service_healthy` | The frontend starts only when the API is ready. |
+| 40 | `restart: unless-stopped` | Recovers from crashes without manual action. |
+| 41 | Pinned versions tested in the image | Reproducible builds. |
+| 42 | Non-root container user | Basic container security. |
+| 43 | Demo: click = start point, arrows = walking | Each demo action mirrors a real one; no teleporting mid-game. |
 
 ## Local development without Docker (Windows)
 
@@ -200,10 +212,18 @@ py -m pytest
 
 Tests are derived from the assignment requirements: for each major component, a normal case, the most important edge case, and invalid input.
 
+## Scaling
+
+- Move sessions to Redis → stateless backends behind a load balancer (today: one worker, in-memory).
+- Fan out WebSocket updates across instances via Redis pub/sub.
+- Replace the brute-force nearest-node scan with a spatial index (KD-tree / R-tree).
+- Wider coverage: per-region graphs loaded on demand, or a local OSRM/Valhalla routing service.
+
 ## Known limitations / next steps
 
 - Location accuracy depends on the device; desktop positioning can be coarse.
 - Coverage is central Tel Aviv-Yafo only (lat 32.045–32.095, lon 34.760–34.800). The player must be at least `GOAL_RADIUS_M` inside its edges. Next step: dynamic per-location graph loading.
+- Geolocation works only on `localhost` over HTTP; other devices need HTTPS.
 - Single player only.
 - Sessions are kept in memory with no expiry (Part 2: TTL / Redis).
 - **Part 2 (not in scope):** multiplayer, shared state in Redis, CI/CD pipeline.

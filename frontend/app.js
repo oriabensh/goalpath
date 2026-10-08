@@ -103,7 +103,8 @@ async function startGame() {
       body: JSON.stringify({ lat: state.pos.lat, lon: state.pos.lon }),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 422 && typeof data.detail === "string") return showCoverageError();
+    const code = data.detail && data.detail.code;
+    if (code === "outside_coverage" || code === "near_edge") return showCoverageError(code);
     if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Server error (${res.status}).`);
     drawGame(data);
     openSocket(data.session_id);
@@ -125,6 +126,7 @@ function drawGame(data) {
     L.marker(goal, { icon: goalIcon }),
   ].map((layer) => layer.addTo(map));
   map.fitBounds(L.latLngBounds(route).extend(goal), { padding: [40, 40] });
+  updateDemoHint();
 }
 
 function resetGame() {
@@ -134,6 +136,7 @@ function resetGame() {
   state.finished = false;
   $("dist").textContent = "–";
   $("goal-overlay").hidden = true;
+  updateDemoHint();
 }
 
 function onGoalReached(msg) {
@@ -143,6 +146,7 @@ function onGoalReached(msg) {
   $("goal-time").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   $("goal-dist").textContent = Math.round(msg.distance_walked_m);
   $("goal-overlay").hidden = false;
+  updateDemoHint();
 }
 
 // --- WebSocket -------------------------------------------------------------
@@ -187,7 +191,7 @@ function setDemo(on) {
   $("demo-badge").hidden = !on;
   document.body.classList.toggle("demo", on);
   if (on) {
-    setHint("Demo: click the map to place the ball. Arrow keys move it 10 m.");
+    updateDemoHint();
     showCoverageArea();
   } else {
     setHint(state.lastReal ? "" : "Waiting for your location…");
@@ -223,8 +227,15 @@ async function showCoverageArea() {
   }
 }
 
+const inGame = () => state.layers.length > 0 && !state.finished;
+
+function updateDemoHint() {
+  if (state.demo) setHint(inGame() ? "Use arrow keys to walk" : "Click the map to set your start point");
+}
+
+// Click = choose a start point (before the game only); arrows = walking. No teleporting mid-game.
 map.on("click", (e) => {
-  if (state.demo) setPosition(e.latlng.lat, e.latlng.lng, null);
+  if (state.demo && !inGame()) setPosition(e.latlng.lat, e.latlng.lng, null);
 });
 
 document.addEventListener("keydown", (e) => {
@@ -291,8 +302,12 @@ function showLocationError() {
   ]);
 }
 
-function showCoverageError() {
-  showPanel("coverage", "Outside the play area", textBlock("This area isn't supported yet. GoalPath currently covers central Tel Aviv."), [
+function showCoverageError(code) {
+  const text =
+    code === "near_edge"
+      ? "Too close to the edge of the covered area (central Tel Aviv)."
+      : "This area isn't supported yet. GoalPath currently covers central Tel Aviv.";
+  showPanel("coverage", "Outside the play area", textBlock(text), [
     { label: "Close" },
     { label: "Use demo mode", primary: true, onClick: useDemo },
   ]);

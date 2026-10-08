@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"  # fixed: the frontend calls the API on port 8000
+    environment:
+      GOAL_RADIUS_M: ${GOAL_RADIUS_M:-500}
+      GOAL_MIN_DISTANCE_M: ${GOAL_MIN_DISTANCE_M:-100}
+      GOAL_THRESHOLD_M: ${GOAL_THRESHOLD_M:-20}
+      REROUTE_THRESHOLD_M: ${REROUTE_THRESHOLD_M:-25}
+      GOAL_MAX_ATTEMPTS: ${GOAL_MAX_ATTEMPTS:-20}
+      FRONTEND_PORT: ${FRONTEND_PORT:-8080}  # used for the CORS origin
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status != 200)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

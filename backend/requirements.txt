@@ -1,6 +1,7 @@
-fastapi
-uvicorn[standard]
-pydantic-settings
-osmnx
-networkx
-pytest
+# Pinned versions, tested in python:3.12-slim
+fastapi==0.142.4
+uvicorn[standard]==0.54.0
+pydantic-settings==2.15.0
+osmnx==2.1.1
+networkx==3.7
+pytest==9.1.1

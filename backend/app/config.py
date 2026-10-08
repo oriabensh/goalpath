@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,9 +14,14 @@ class Settings(BaseSettings):
     goal_min_distance_m: float = Field(100, gt=0)
     goal_threshold_m: float = Field(20, gt=0)
     reroute_threshold_m: float = Field(25, gt=0)
-    backend_port: int = Field(8000, gt=0)
     frontend_port: int = Field(8080, gt=0)
     goal_max_attempts: int = Field(20, gt=0)
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _upper(cls, v):
+        return v.upper() if isinstance(v, str) else v
 
     @model_validator(mode="after")
     def _check_distances(self) -> "Settings":
