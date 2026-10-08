@@ -8,6 +8,8 @@ from app.geo import haversine_m
 from app.goal import place_goal
 from app.routing import astar, nearest_node, route_coords
 
+MIN_STEP_M = 5.0  # smallest movement counted toward distance walked
+
 
 def _check_position(lat: float, lon: float) -> None:
     if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
@@ -33,9 +35,13 @@ class GameSession:
         self.threshold_m = threshold_m
         self.goal_node = place_goal(G, lat, lon, min_m, max_m, rng, max_attempts)
         self.goal = (G.nodes[self.goal_node]["y"], G.nodes[self.goal_node]["x"])
-        path, self.route_length_m = astar(G, nearest_node(G, lat, lon), self.goal_node)
-        self.route = route_coords(G, path)
+        path, street_length_m = astar(G, nearest_node(G, lat, lon), self.goal_node)
+        street = route_coords(G, path)
+        # Start at the player's real position; first segment connects to the street.
+        self.route = [(lat, lon)] + street
+        self.route_length_m = haversine_m(lat, lon, *street[0]) + street_length_m
         self.player = (lat, lon)
+        self._walk_anchor = (lat, lon)  # last position counted toward distance walked
         self.started_at = time.monotonic()
         self.finished_at: float | None = None
         self.distance_walked_m = 0.0
@@ -63,7 +69,12 @@ class GameSession:
         if self.finished:
             return self._state(just_reached=False)  # final state, frozen
 
-        self.distance_walked_m += haversine_m(*self.player, lat, lon)
+        # Count a step only beyond max(5 m, accuracy), measured from the last counted point,
+        # so GPS jitter is ignored but slow walking still accumulates.
+        step = haversine_m(*self._walk_anchor, lat, lon)
+        if step > max(MIN_STEP_M, accuracy_m or 0):
+            self.distance_walked_m += step
+            self._walk_anchor = (lat, lon)
         self.player = (lat, lon)
         self.accuracy_m = accuracy_m
         if haversine_m(lat, lon, *self.goal) <= self.threshold_m:

@@ -12,7 +12,7 @@ A web-based navigation game: walk your soccer ball to a randomly placed goal alo
 - **Goal detection**: "Goal reached" feedback when the player is within a proximity threshold.
 - **Dynamic re-routing (bonus)**: the route updates when the player deviates from it.
 - **Coverage**: central Tel Aviv-Yafo (pre-bundled walk graph, works fully offline). Outside it, the game shows a clear error.
-- **Demo mode**: clearly labeled and off by default. Moves the ball along the route or via arrow keys, for demoing on a stationary laptop.
+- **Demo mode**: off by default, marked with a DEMO badge. Click the map to place the ball and use the arrow keys to move it 10 m per press, for demoing on a stationary laptop.
 
 ## Quick start
 
@@ -83,7 +83,7 @@ Backend modules (`backend/app/`):
 | `game.py` | Game session: goal, route, progress, goal detection (no FastAPI) |
 | `main.py` | FastAPI app: REST endpoints, WebSocket, in-memory session store |
 
-Frontend: TBD.
+Frontend (`frontend/`, no build): `index.html`, `app.js` (map, geolocation, WebSocket, demo mode), `style.css`. It calls the backend at `http://<page host>:8000`.
 
 ### API
 
@@ -139,7 +139,7 @@ Server → client:
 | 17 | Pedestrian network (OSM walk) | Player is a person; ~500 m radius is walking scale. |
 | 18 | Self-implemented A* + haversine heuristic | Optimal like Dijkstra, explores fewer nodes, fully explainable. |
 | 19 | Single bundled Tel Aviv graph, loaded once into memory | Fully offline, simple, fast; dynamic per-location loading is the next step. |
-| 20 | Outside coverage → clear error + manual start point | A reviewer anywhere can still play; no fake data. |
+| 20 | ~~Outside coverage → clear error + manual start point~~ (replaced by #31) | A reviewer anywhere can still play; no fake data. |
 | 21 | Goal snapped to a reachable node | A goal inside a building or with no route would break the game. |
 | 22 | Brute-force nearest node | Simple, no dependency; spatial index is the scaling path. |
 | 23 | Routing tests on a hand-built graph | Fast, deterministic, test the algorithm not OSM data. |
@@ -151,6 +151,10 @@ Server → client:
 | 29 | `GOAL_THRESHOLD_M` < `GOAL_MIN_DISTANCE_M` validated | Prevents a goal reached at spawn. |
 | 30 | Radius measured straight-line | Reading of "within a defined radius"; walking route may be longer. |
 | 31 | Manual start point only in labeled demo mode | Real host location stays the default, per the requirement. |
+| 32 | Vanilla JS + Leaflet, no build | Simple, fast to run, nothing to install. |
+| 33 | Route starts at the player's real position (dashed connector) | The ball stays at the true location; the line visibly connects it to the street. |
+| 34 | Walked distance ignores steps under GPS accuracy | Stationary jitter doesn't inflate the distance. |
+| 35 | Demo positions use the same pipeline as real ones | Demo tests the real system, not a separate path. |
 
 ## Local development without Docker (Windows)
 
@@ -178,7 +182,13 @@ Run the backend (from the repo root, venv activated):
 py -m uvicorn app.main:app --app-dir backend --reload
 ```
 
-Then open <http://localhost:8000/docs>. Running the frontend: TBD.
+API docs: <http://localhost:8000/docs>. Serve the frontend in a second terminal:
+
+```powershell
+py -m http.server 8080 --directory frontend
+```
+
+Open <http://localhost:8080> and allow location access. Demo mode: tick **Demo**, click the map to place the ball, and use the arrow keys to move it.
 
 ## Testing
 
@@ -195,4 +205,5 @@ Tests are derived from the assignment requirements: for each major component, a 
 - Location accuracy depends on the device; desktop positioning can be coarse.
 - Coverage is central Tel Aviv-Yafo only (lat 32.045–32.095, lon 34.760–34.800). The player must be at least `GOAL_RADIUS_M` inside its edges. Next step: dynamic per-location graph loading.
 - Single player only.
+- Sessions are kept in memory with no expiry (Part 2: TTL / Redis).
 - **Part 2 (not in scope):** multiplayer, shared state in Redis, CI/CD pipeline.
