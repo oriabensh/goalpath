@@ -43,7 +43,7 @@ All parameters are set through environment variables (see `.env.example`).
 |---|---|---|
 | `GOAL_RADIUS_M` | `500` | Maximum distance (m) of the goal from the player |
 | `GOAL_MIN_DISTANCE_M` | `100` | Minimum distance (m) of the goal from the player |
-| `GOAL_THRESHOLD_M` | `20` | Distance (m) at which the goal counts as reached |
+| `GOAL_THRESHOLD_M` | `20` | Distance (m) at which the goal counts as reached (must be < `GOAL_MIN_DISTANCE_M`) |
 | `REROUTE_THRESHOLD_M` | `25` | Deviation (m) from the path that triggers a re-route |
 | `GOAL_MAX_ATTEMPTS` | `20` | Goal placement retries before giving up |
 | `BACKEND_PORT` | `8000` | FastAPI port |
@@ -80,8 +80,41 @@ Backend modules (`backend/app/`):
 | `graph_store.py` | Loads the bundled graph once; coverage check |
 | `routing.py` | Nearest node, A*, route coordinates |
 | `goal.py` | Goal candidate sampling, snapping and reachability |
+| `game.py` | Game session: goal, route, progress, goal detection (no FastAPI) |
+| `main.py` | FastAPI app: REST endpoints, WebSocket, in-memory session store |
 
-API and frontend: TBD.
+Frontend: TBD.
+
+### API
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | `{"status": "ok", "graph_nodes": n}` |
+| `GET` | `/api/coverage` | Covered area bounds: `min_lat`, `min_lon`, `max_lat`, `max_lon` |
+| `POST` | `/api/games` | Body `{lat, lon}`. Returns `session_id`, `player`, `goal`, `route` (list of `[lat, lon]`), `route_length_m`, `coverage_bounds`. `422` for invalid input or outside coverage; `503` if no goal could be placed |
+| `WS` | `/ws/games/{session_id}` | Live position stream (below). Unknown session → close code `4404` |
+
+Interactive docs: <http://localhost:8000/docs>.
+
+### WebSocket messages
+
+Client → server, on every position fix (`accuracy` optional, display-only):
+
+```json
+{"lat": 32.0809, "lon": 34.7806, "accuracy": 35}
+```
+
+Server → client:
+
+```json
+{"type": "state", "player": {"lat": 32.0809, "lon": 34.7806}, "accuracy_m": 35,
+ "distance_to_goal_m": 268.6, "reached": false, "just_reached": false,
+ "elapsed_s": 4.1, "distance_walked_m": 0.0}
+{"type": "goal_reached", "elapsed_s": 93.2, "distance_walked_m": 431.0}
+{"type": "error", "detail": "..."}
+```
+
+`goal_reached` is sent once, right after the `state` that reached the goal. Further positions return the frozen final `state`. An invalid message gets an `error` reply and the connection stays open.
 
 ## Decision Log
 
@@ -110,6 +143,14 @@ API and frontend: TBD.
 | 21 | Goal snapped to a reachable node | A goal inside a building or with no route would break the game. |
 | 22 | Brute-force nearest node | Simple, no dependency; spatial index is the scaling path. |
 | 23 | Routing tests on a hand-built graph | Fast, deterministic, test the algorithm not OSM data. |
+| 24 | Domain logic separated from transport (`game.py` vs `main.py`) | Testable without a server; Part 2 adds players without rewriting it. |
+| 25 | Server-side goal detection | Single source of truth; required for "first to reach" in Part 2. |
+| 26 | Goal detection by threshold only, accuracy display-only | Desktop Wi-Fi accuracy is coarse; gating would block the requirement. |
+| 27 | Goal reached is final, triggered once | No duplicate feedback; ready for winner logic in Part 2. |
+| 28 | In-memory session store | Enough for Part 1; Redis in Part 2 for multiple instances. |
+| 29 | `GOAL_THRESHOLD_M` < `GOAL_MIN_DISTANCE_M` validated | Prevents a goal reached at spawn. |
+| 30 | Radius measured straight-line | Reading of "within a defined radius"; walking route may be longer. |
+| 31 | Manual start point only in labeled demo mode | Real host location stays the default, per the requirement. |
 
 ## Local development without Docker (Windows)
 
@@ -131,7 +172,13 @@ The walk graph is already bundled in `backend/data/`. To rebuild it (needs inter
 py backend/scripts/build_graph.py
 ```
 
-Running the server and frontend: TBD (no API yet).
+Run the backend (from the repo root, venv activated):
+
+```powershell
+py -m uvicorn app.main:app --app-dir backend --reload
+```
+
+Then open <http://localhost:8000/docs>. Running the frontend: TBD.
 
 ## Testing
 
