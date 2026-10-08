@@ -88,23 +88,29 @@ Module layout: TBD.
 | 11 | All parameters from environment variables | Configurable without code changes. |
 | 12 | Run locally with `docker compose up`; no paid services or API keys | One-command setup, free to run. |
 | 13 | LF line endings enforced (`.gitattributes`) | Code runs in Linux containers; CRLF can break scripts. |
+| 14 | Goal sampled uniformly by area (sqrt of uniform in ring) | Avoids clustering near the player. |
+| 15 | Config validated at startup | Misconfiguration fails fast, not mid-game. |
+| 16 | Injectable seeded RNG for goal generation | Deterministic tests. |
 
 ## Local development without Docker (Windows)
 
-TBD — expected commands:
+From the repo root:
 
 ```powershell
 py -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 py -m pip install -r backend/requirements.txt
-py -m uvicorn app.main:app --reload --port 8000 --app-dir backend   # entry point TBD
+copy .env.example .env   # optional; defaults apply without it
+py -m pytest
 ```
 
-Serve the frontend with any static server, e.g. `py -m http.server 8080 --directory frontend`.
+With the venv activated, `py` uses the venv interpreter.
+
+Running the server and frontend: TBD (no API yet).
 
 ## Testing
 
-TBD — run from the repo root:
+From the repo root (`pytest.ini` puts `backend/` on the import path):
 
 ```powershell
 py -m pytest
