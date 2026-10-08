@@ -11,6 +11,7 @@ A web-based navigation game: walk your soccer ball to a randomly placed goal alo
 - **Shortest path**: the shortest walkable path from player to goal is computed and drawn on the map.
 - **Goal detection**: "Goal reached" feedback when the player is within a proximity threshold.
 - **Dynamic re-routing (bonus)**: the route updates when the player deviates from it.
+- **Coverage**: central Tel Aviv-Yafo (pre-bundled walk graph, works fully offline). Outside it, the game shows a clear error.
 - **Demo mode**: clearly labeled and off by default. Moves the ball along the route or via arrow keys, for demoing on a stationary laptop.
 
 ## Quick start
@@ -44,6 +45,7 @@ All parameters are set through environment variables (see `.env.example`).
 | `GOAL_MIN_DISTANCE_M` | `100` | Minimum distance (m) of the goal from the player |
 | `GOAL_THRESHOLD_M` | `20` | Distance (m) at which the goal counts as reached |
 | `REROUTE_THRESHOLD_M` | `25` | Deviation (m) from the path that triggers a re-route |
+| `GOAL_MAX_ATTEMPTS` | `20` | Goal placement retries before giving up |
 | `BACKEND_PORT` | `8000` | FastAPI port |
 | `FRONTEND_PORT` | `8080` | Web page port |
 
@@ -63,13 +65,23 @@ All parameters are set through environment variables (see `.env.example`).
                │
 ┌──────────────▼───────────────┐
 │ Routing                      │
-│  OSMnx pedestrian graph      │
-│  (cache / bundled Tel Aviv)  │
+│  OSM walk graph, bundled     │
+│  (central Tel Aviv-Yafo)     │
 │  A* (haversine) on NetworkX  │
 └──────────────────────────────┘
 ```
 
-Module layout: TBD.
+Backend modules (`backend/app/`):
+
+| Module | Role |
+|---|---|
+| `config.py` | Settings from env vars, validated at startup |
+| `geo.py` | Haversine distance, destination point |
+| `graph_store.py` | Loads the bundled graph once; coverage check |
+| `routing.py` | Nearest node, A*, route coordinates |
+| `goal.py` | Goal candidate sampling, snapping and reachability |
+
+API and frontend: TBD.
 
 ## Decision Log
 
@@ -84,13 +96,20 @@ Module layout: TBD.
 | 7 | Goal: uniform random point in radius, min distance, snapped to nearest walkable node, guaranteed reachable | Fair placement, avoids trivial goals, never unreachable. |
 | 8 | Re-route only when deviation exceeds a configurable threshold | Avoids recomputing on GPS jitter. |
 | 9 | Demo mode: labeled, off by default (auto-walk or arrow keys) | Demo on a stationary laptop; real location stays the default. |
-| 10 | Road graph downloaded on game start and cached; Tel Aviv pre-bundled | Fast repeat starts; works offline for the main area. |
+| 10 | ~~Road graph downloaded on game start and cached; Tel Aviv pre-bundled~~ (superseded by #19) | Fast repeat starts; works offline for the main area. |
 | 11 | All parameters from environment variables | Configurable without code changes. |
 | 12 | Run locally with `docker compose up`; no paid services or API keys | One-command setup, free to run. |
 | 13 | LF line endings enforced (`.gitattributes`) | Code runs in Linux containers; CRLF can break scripts. |
 | 14 | Goal sampled uniformly by area (sqrt of uniform in ring) | Avoids clustering near the player. |
 | 15 | Config validated at startup | Misconfiguration fails fast, not mid-game. |
 | 16 | Injectable seeded RNG for goal generation | Deterministic tests. |
+| 17 | Pedestrian network (OSM walk) | Player is a person; ~500 m radius is walking scale. |
+| 18 | Self-implemented A* + haversine heuristic | Optimal like Dijkstra, explores fewer nodes, fully explainable. |
+| 19 | Single bundled Tel Aviv graph, loaded once into memory | Fully offline, simple, fast; dynamic per-location loading is the next step. |
+| 20 | Outside coverage → clear error + manual start point | A reviewer anywhere can still play; no fake data. |
+| 21 | Goal snapped to a reachable node | A goal inside a building or with no route would break the game. |
+| 22 | Brute-force nearest node | Simple, no dependency; spatial index is the scaling path. |
+| 23 | Routing tests on a hand-built graph | Fast, deterministic, test the algorithm not OSM data. |
 
 ## Local development without Docker (Windows)
 
@@ -105,6 +124,12 @@ py -m pytest
 ```
 
 With the venv activated, `py` uses the venv interpreter.
+
+The walk graph is already bundled in `backend/data/`. To rebuild it (needs internet):
+
+```powershell
+py backend/scripts/build_graph.py
+```
 
 Running the server and frontend: TBD (no API yet).
 
@@ -121,6 +146,6 @@ Tests are derived from the assignment requirements: for each major component, a 
 ## Known limitations / next steps
 
 - Location accuracy depends on the device; desktop positioning can be coarse.
-- Areas outside Tel Aviv require internet access on first start to download the graph.
+- Coverage is central Tel Aviv-Yafo only (lat 32.045–32.095, lon 34.760–34.800). The player must be at least `GOAL_RADIUS_M` inside its edges. Next step: dynamic per-location graph loading.
 - Single player only.
 - **Part 2 (not in scope):** multiplayer, shared state in Redis, CI/CD pipeline.

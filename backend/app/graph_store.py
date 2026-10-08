@@ -1,0 +1,47 @@
+from functools import lru_cache
+from pathlib import Path
+
+import networkx as nx
+import osmnx as ox
+
+from app.geo import destination_point
+
+GRAPH_PATH = Path(__file__).resolve().parents[1] / "data" / "tel_aviv_walk.graphml"
+
+
+class OutsideCoverageError(Exception):
+    """The player (plus the goal radius) is outside the bundled map area."""
+
+
+@lru_cache
+def get_graph() -> nx.MultiDiGraph:
+    # Loaded once per process and kept in memory.
+    return ox.load_graphml(GRAPH_PATH)
+
+
+@lru_cache
+def get_bounds() -> tuple[float, float, float, float]:
+    """(min_lat, min_lon, max_lat, max_lon) of the graph's nodes."""
+    nodes = get_graph().nodes
+    lats = [d["y"] for _, d in nodes(data=True)]
+    lons = [d["x"] for _, d in nodes(data=True)]
+    return min(lats), min(lons), max(lats), max(lons)
+
+
+def is_covered(lat: float, lon: float, radius_m: float) -> bool:
+    """True if the circle of radius_m around (lat, lon) fits inside the graph bounds."""
+    min_lat, min_lon, max_lat, max_lon = get_bounds()
+    north, _ = destination_point(lat, lon, 0, radius_m)
+    south, _ = destination_point(lat, lon, 180, radius_m)
+    _, east = destination_point(lat, lon, 90, radius_m)
+    _, west = destination_point(lat, lon, 270, radius_m)
+    return min_lat <= south and north <= max_lat and min_lon <= west and east <= max_lon
+
+
+def ensure_covered(lat: float, lon: float, radius_m: float) -> None:
+    if not is_covered(lat, lon, radius_m):
+        min_lat, min_lon, max_lat, max_lon = get_bounds()
+        raise OutsideCoverageError(
+            f"Position ({lat:.5f}, {lon:.5f}) with a {radius_m:.0f} m radius is outside the covered area "
+            f"(central Tel Aviv-Yafo: lat {min_lat:.4f}..{max_lat:.4f}, lon {min_lon:.4f}..{max_lon:.4f})."
+        )

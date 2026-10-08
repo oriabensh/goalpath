@@ -20,9 +20,6 @@ htmlcov/
 # Local-only copy of the assignment (never push)
 docs/assignment.md
 
-# Runtime graph cache (backend/data/ holds the bundled Tel Aviv graph and is tracked)
-backend/cache/
-
 # Docker
 docker-compose.override.yml
 docker-compose.override.yaml

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     reroute_threshold_m: float = Field(25, gt=0)
     backend_port: int = Field(8000, gt=0)
     frontend_port: int = Field(8080, gt=0)
+    goal_max_attempts: int = Field(20, gt=0)
 
     @model_validator(mode="after")
     def _min_below_radius(self) -> "Settings":
