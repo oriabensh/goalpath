@@ -24,3 +24,20 @@ def destination_point(lat: float, lon: float, bearing_deg: float, distance_m: fl
     )
     lon2 = (math.degrees(l2) + 540) % 360 - 180  # normalize to [-180, 180)
     return math.degrees(p2), lon2
+
+
+def point_segment_distance_m(
+    p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]
+) -> float:
+    """Distance in meters from point p to segment a-b (lat, lon). Local flat projection; fine at street scale."""
+    k = math.cos(math.radians(p[0]))  # meters per degree of lon / meters per degree of lat
+
+    def xy(q: tuple[float, float]) -> tuple[float, float]:
+        return (q[1] - p[1]) * k, q[0] - p[0]
+
+    (ax, ay), (bx, by) = xy(a), xy(b)
+    dx, dy = bx - ax, by - ay
+    seg2 = dx * dx + dy * dy
+    t = 0.0 if seg2 == 0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / seg2))
+    cx, cy = ax + t * dx, ay + t * dy  # closest point, relative to p
+    return math.radians(math.hypot(cx, cy)) * EARTH_RADIUS_M

@@ -16,6 +16,20 @@ def _coords(G: nx.Graph, node) -> tuple[float, float]:
     return d["y"], d["x"]
 
 
+def graph_bounds(G: nx.Graph) -> tuple[float, float, float, float]:
+    """(min_lat, min_lon, max_lat, max_lon) of the graph's nodes, cached on the graph."""
+    if "_bounds" not in G.graph:
+        lats = [d["y"] for _, d in G.nodes(data=True)]
+        lons = [d["x"] for _, d in G.nodes(data=True)]
+        G.graph["_bounds"] = (min(lats), min(lons), max(lats), max(lons))
+    return G.graph["_bounds"]
+
+
+def in_bounds(G: nx.Graph, lat: float, lon: float) -> bool:
+    min_lat, min_lon, max_lat, max_lon = graph_bounds(G)
+    return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
+
+
 def nearest_node(G: nx.Graph, lat: float, lon: float):
     # O(n) scan; a spatial index (KD-tree / R-tree) is the scaling path.
     return min(G.nodes, key=lambda n: haversine_m(lat, lon, *_coords(G, n)))
@@ -65,6 +79,10 @@ def astar(G: nx.Graph, source, target) -> tuple[list, float]:
                 heapq.heappush(open_heap, (cost + h(nbr), next(tie), nbr))
 
     raise NoPathError(f"no path from {source!r} to {target!r}")
+
+
+def polyline_length_m(points: list[tuple[float, float]]) -> float:
+    return sum(haversine_m(*a, *b) for a, b in zip(points, points[1:]))
 
 
 def route_coords(G: nx.Graph, node_list: list) -> list[tuple[float, float]]:

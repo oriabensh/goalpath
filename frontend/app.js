@@ -121,12 +121,37 @@ function drawGame(data) {
   const route = data.route; // [[lat, lon], ...]; route[0] is the player's real position
   const goal = [data.goal.lat, data.goal.lon];
   state.layers = [
-    L.polyline(route.slice(0, 2), { color: ROUTE_COLOR, weight: 4, dashArray: "6 8" }), // ball -> street
-    L.polyline(route.slice(1), { color: ROUTE_COLOR, weight: 5, opacity: 0.85 }),
+    L.polyline([], { color: ROUTE_COLOR, weight: 4, dashArray: "6 8" }), // ball -> street
+    L.polyline([], { color: ROUTE_COLOR, weight: 5, opacity: 0.85 }),
     L.marker(goal, { icon: goalIcon }),
   ].map((layer) => layer.addTo(map));
+  drawRoute(route);
   map.fitBounds(L.latLngBounds(route).extend(goal), { padding: [40, 40] });
   updateDemoHint();
+}
+
+function drawRoute(route) {
+  const [connector, street] = state.layers;
+  connector.setLatLngs(route.slice(0, 2));
+  street.setLatLngs(route.slice(1));
+}
+
+function onState(msg) {
+  $("dist").textContent = Math.round(msg.distance_to_goal_m);
+  if (!state.layers.length) return;
+  drawRoute(msg.route);
+  if (msg.rerouted) showToast("Recalculating route");
+  $("warning").hidden = !msg.off_coverage;
+}
+
+let toastTimer = null;
+
+function showToast(text) {
+  const toast = $("toast");
+  toast.textContent = text;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (toast.hidden = true), 2000);
 }
 
 function resetGame() {
@@ -135,6 +160,7 @@ function resetGame() {
   state.layers = [];
   state.finished = false;
   $("dist").textContent = "–";
+  $("warning").hidden = true;
   $("goal-overlay").hidden = true;
   updateDemoHint();
 }
@@ -158,7 +184,7 @@ function openSocket(sessionId) {
   ws.onopen = sendPosition;
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === "state") $("dist").textContent = Math.round(msg.distance_to_goal_m);
+    if (msg.type === "state") onState(msg);
     else if (msg.type === "goal_reached") onGoalReached(msg);
     else if (msg.type === "error") console.warn("Server rejected position:", msg.detail);
   };

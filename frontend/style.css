@@ -63,7 +63,8 @@ button {
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button:disabled { opacity: 0.5; cursor: default; }
 
-#map { flex: 1; }
+#stage { position: relative; flex: 1; }
+#map { position: absolute; inset: 0; }
 body.demo #map { outline: 3px solid var(--demo); outline-offset: -3px; }
 
 #hint {
@@ -80,6 +81,23 @@ body.demo #map { outline: 3px solid var(--demo); outline-offset: -3px; }
   z-index: 1000;
 }
 #hint:empty { display: none; }
+
+#warning,
+#toast {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-align: center;
+  z-index: 1000;
+}
+#warning { top: 12px; background: #fff4e6; color: var(--demo); border: 1px solid #ffc078; }
+#toast { top: 52px; background: var(--accent); color: #fff; }
+#warning[hidden],
+#toast[hidden] { display: none; }
 
 .overlay {
   position: fixed;

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -82,6 +83,7 @@ def start_game(req: StartRequest):
             min_m=settings.goal_min_distance_m,
             max_m=settings.goal_radius_m,
             threshold_m=settings.goal_threshold_m,
+            reroute_threshold_m=settings.reroute_threshold_m,
             max_attempts=settings.goal_max_attempts,
         )
     except GoalPlacementError as e:
@@ -117,12 +119,15 @@ async def game_socket(ws: WebSocket, session_id: str):
             raw = await ws.receive_text()
             try:
                 msg = PositionMessage.model_validate_json(raw)
-                state = session.update_position(msg.lat, msg.lon, msg.accuracy)
+                # Worker thread: a reroute runs A*, which must not block other connections.
+                state = await asyncio.to_thread(session.update_position, msg.lat, msg.lon, msg.accuracy)
             except ValueError as e:  # includes pydantic.ValidationError
                 log.warning("ws_invalid_message session=%s", session_id)
                 await ws.send_json({"type": "error", "detail": str(e)})
                 continue
             log.debug("position session=%s lat=%.5f lon=%.5f", session_id, msg.lat, msg.lon)
+            if state["rerouted"]:
+                log.info("rerouted session=%s route_m=%.0f", session_id, state["route_length_m"])
             await ws.send_json({"type": "state", **state})
             if state["just_reached"]:
                 log.info(

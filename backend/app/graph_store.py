@@ -5,6 +5,7 @@ import networkx as nx
 import osmnx as ox
 
 from app.geo import destination_point
+from app.routing import graph_bounds
 
 GRAPH_PATH = Path(__file__).resolve().parents[1] / "data" / "tel_aviv_walk.graphml"
 
@@ -24,13 +25,9 @@ def get_graph() -> nx.MultiDiGraph:
     return ox.load_graphml(GRAPH_PATH)
 
 
-@lru_cache
 def get_bounds() -> tuple[float, float, float, float]:
-    """(min_lat, min_lon, max_lat, max_lon) of the graph's nodes."""
-    nodes = get_graph().nodes
-    lats = [d["y"] for _, d in nodes(data=True)]
-    lons = [d["x"] for _, d in nodes(data=True)]
-    return min(lats), min(lons), max(lats), max(lons)
+    """(min_lat, min_lon, max_lat, max_lon) of the bundled graph."""
+    return graph_bounds(get_graph())
 
 
 def is_covered(lat: float, lon: float, radius_m: float) -> bool:

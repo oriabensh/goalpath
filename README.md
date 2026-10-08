@@ -10,7 +10,7 @@ A web-based navigation game: walk your soccer ball to a randomly placed goal alo
 - **Goal generation**: on game start, a static goal marker is placed within a configurable radius of the player.
 - **Shortest path**: the shortest walkable path from player to goal is computed and drawn on the map.
 - **Goal detection**: "Goal reached" feedback when the player is within a proximity threshold.
-- **Dynamic re-routing (bonus)**: planned (step 6). The route will update when the player deviates from it.
+- **Dynamic re-routing (bonus)**: the route updates as the player moves. It is trimmed while on route and recomputed with A* when the player deviates.
 - **Coverage**: central Tel Aviv-Yafo (pre-bundled walk graph, works fully offline). Outside it, the game shows a clear error.
 - **Demo mode**: off by default, marked with a DEMO badge. Before the game, click the map to set the start point; during the game, arrow keys walk the ball 10 m per press. For demoing on a stationary laptop.
 
@@ -80,11 +80,11 @@ Backend modules (`backend/app/`):
 | Module | Role |
 |---|---|
 | `config.py` | Settings from env vars, validated at startup |
-| `geo.py` | Haversine distance, destination point |
+| `geo.py` | Haversine distance, destination point, point-to-segment distance |
 | `graph_store.py` | Loads the bundled graph once; coverage check |
 | `routing.py` | Nearest node, A*, route coordinates |
 | `goal.py` | Goal candidate sampling, snapping and reachability |
-| `game.py` | Game session: goal, route, progress, goal detection (no FastAPI) |
+| `game.py` | Game session: goal, route updates and rerouting, progress, goal detection (no FastAPI) |
 | `main.py` | FastAPI app: REST endpoints, WebSocket, in-memory session store |
 
 Frontend (`frontend/`, no build): `index.html`, `app.js` (map, geolocation, WebSocket, demo mode), `style.css`. It calls the backend at `http://<page host>:8000`.
@@ -113,7 +113,8 @@ Server → client:
 ```json
 {"type": "state", "player": {"lat": 32.0809, "lon": 34.7806}, "accuracy_m": 35,
  "distance_to_goal_m": 268.6, "reached": false, "just_reached": false,
- "elapsed_s": 4.1, "distance_walked_m": 0.0}
+ "elapsed_s": 4.1, "distance_walked_m": 0.0,
+ "route": [[32.0809, 34.7806], ...], "route_length_m": 412.3, "rerouted": false, "off_coverage": false}
 {"type": "goal_reached", "elapsed_s": 93.2, "distance_walked_m": 431.0}
 {"type": "error", "detail": "..."}
 ```
@@ -131,7 +132,7 @@ Server → client:
 | 5 | Location via browser Geolocation API (`watchPosition`) streamed over WebSocket | A container can't access host location hardware; the browser is the bridge. |
 | 6 | Goal detection is server-side | Single source of truth for game state. |
 | 7 | Goal: uniform random point in radius, min distance, snapped to nearest walkable node, guaranteed reachable | Fair placement, avoids trivial goals, never unreachable. |
-| 8 | Re-route only when deviation exceeds a configurable threshold — planned (step 6) | Avoids recomputing on GPS jitter. |
+| 8 | Re-route only when deviation exceeds a configurable threshold (see #44–45) | Avoids recomputing on GPS jitter. |
 | 9 | Demo mode: labeled, off by default (click/arrow keys; auto-walk optional, not built yet) | Demo on a stationary laptop; real location stays the default. |
 | 10 | ~~Road graph downloaded on game start and cached; Tel Aviv pre-bundled~~ (superseded by #19) | Fast repeat starts; works offline for the main area. |
 | 11 | All parameters from environment variables | Configurable without code changes. |
@@ -167,6 +168,11 @@ Server → client:
 | 41 | Pinned versions tested in the image | Reproducible builds. |
 | 42 | Non-root container user | Basic container security. |
 | 43 | Demo: click = start point, arrows = walking | Each demo action mirrors a real one; no teleporting mid-game. |
+| 44 | Trim on route, A* only on deviation | Cheap updates; full recompute only when needed. |
+| 45 | Deviation threshold = max(`REROUTE_THRESHOLD_M`, GPS accuracy) | Poor accuracy doesn't cause constant reroutes. |
+| 46 | Outside coverage keeps the last route | The game degrades gracefully instead of failing. |
+| 47 | Monotonic trimming | A route that doubles back can't skip ahead. |
+| 48 | Reroute A* in a worker thread | Doesn't block other WebSocket messages. |
 
 ## Local development without Docker (Windows)
 
@@ -226,4 +232,8 @@ Tests are derived from the assignment requirements: for each major component, a 
 - Geolocation works only on `localhost` over HTTP; other devices need HTTPS.
 - Single player only.
 - Sessions are kept in memory with no expiry (Part 2: TTL / Redis).
+- Only direct dependencies are pinned; transitive versions can drift (next: a full lock file).
+- Backend image is ~690 MB, mostly the OSMnx/geopandas stack.
+- Demo walking needs arrow keys; no phone support.
+- With real desktop location (Wi-Fi accuracy), reroutes are rare by design; demo mode shows them.
 - **Part 2 (not in scope):** multiplayer, shared state in Redis, CI/CD pipeline.
