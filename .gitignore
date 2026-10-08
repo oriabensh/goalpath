@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local-only copy of the assignment (never push)
+docs/assignment.md
+
+# Runtime graph cache (backend/data/ holds the bundled Tel Aviv graph and is tracked)
+backend/cache/
+
+# Docker
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+._*
+
+# IDE (.cursor/ is intentionally tracked)
+.vscode/
+.idea/
+*.swp
+*~

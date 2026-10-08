@@ -1,0 +1,21 @@
+---
+description: GoalPath project rules
+alwaysApply: true
+---
+
+# Context
+- GoalPath: High Lander home assignment, Part 1 only. Follow the requirements exactly; don't change any of them.
+- The original requirements are in docs/assignment.md. Check code and tests against it.
+  It is the source of truth; if anything conflicts with it, flag it to me.
+- Decisions in the README "Decision Log" are final unless I say otherwise.
+
+# Code style
+- Modular but minimal. Concise English comments.
+- Windows: write Python commands with `py` (e.g. `py -m pip install`, `py -m pytest`).
+
+# Working rules
+- After each work step, append concise rows to the README "Decision Log" table (decision + why, one line).
+- Tests: focused and small. For major components only 3 tests: normal case, most important edge case, invalid input.
+- Tests are derived from the assignment requirements, not from the implementation.
+- Clear test names, no long docstrings.
+- If something looks like a bug, flag it explicitly; don't silently change behavior.
