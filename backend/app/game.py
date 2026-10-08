@@ -66,15 +66,23 @@ class GameSession:
             return  # keep the last route
 
         # Monotonic match: scan forward from the last matched segment (index 0, since passed
-        # segments are trimmed) and take the first one within the threshold, not the globally
-        # nearest, so a route that doubles back can't skip ahead.
+        # segments are trimmed). Take the nearest segment within the first contiguous run of
+        # segments inside the threshold: a passed corner is dropped, but a route that doubles
+        # back can't skip ahead (the segments in between break the run).
         threshold = max(self.reroute_threshold_m, accuracy_m or 0)
+        best = None  # (distance, index)
         for i, (a, b) in enumerate(zip(self.route, self.route[1:])):
-            if point_segment_distance_m((lat, lon), a, b) <= threshold:
-                # On route: drop the passed part, no A*.
-                self.route = [(lat, lon)] + self.route[i + 1 :]
-                self.route_length_m = polyline_length_m(self.route)
-                return
+            d = point_segment_distance_m((lat, lon), a, b)
+            if d <= threshold:
+                if best is None or d <= best[0]:
+                    best = (d, i)
+            elif best is not None:
+                break  # end of the first run
+        if best is not None:
+            # On route: drop the passed part, no A*.
+            self.route = [(lat, lon)] + self.route[best[1] + 1 :]
+            self.route_length_m = polyline_length_m(self.route)
+            return
         self._route_from(lat, lon)  # new route; matching restarts at index 0
         self.rerouted = True
 

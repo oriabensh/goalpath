@@ -5,20 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GoalPath</title>
   <link rel="icon" href="assets/ball.png">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header id="hud">
     <div class="brand"><img src="assets/ball.png" alt=""> GoalPath</div>
     <div class="stats">
-      <span>Goal: <b id="dist">–</b> m (straight line)</span>
+      <span>Goal: <b id="dist">–</b> m (straight line) · <b id="walk">–</b> m walking</span>
       <span>Accuracy: <b id="acc">–</b> m</span>
     </div>
     <div class="controls">
       <span id="demo-badge" class="badge" hidden>DEMO</span>
       <label class="toggle"><input type="checkbox" id="demo-toggle"> Demo</label>
+      <button id="autowalk" hidden>Auto-walk</button>
       <button id="start" class="primary" disabled>Start game</button>
     </div>
   </header>
@@ -46,8 +47,8 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="vendor/leaflet/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="></script>
   <script src="app.js"></script>
 </body>
 </html>

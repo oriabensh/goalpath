@@ -4,15 +4,27 @@ A web-based navigation game: walk your soccer ball to a randomly placed goal alo
 
 > Home assignment for High Lander — Part 1.
 
+## Requirements coverage
+
+| Requirement (Part 1) | How it's met | Where |
+|---|---|---|
+| Dynamic player marker | Ball follows the host's live location (`watchPosition`), streamed to the backend over WebSocket | [frontend/app.js](frontend/app.js) |
+| Static goal marker within a defined radius, at session start | Random point in the ring [`GOAL_MIN_DISTANCE_M`, `GOAL_RADIUS_M`] around the player, snapped to a reachable walkable node | [backend/app/goal.py](backend/app/goal.py) |
+| Goal detection → "goal reached" feedback | Server checks distance ≤ `GOAL_THRESHOLD_M` on every fix and sends `goal_reached` once; the page shows "GOAL!" | [backend/app/game.py](backend/app/game.py), [frontend/app.js](frontend/app.js) |
+| Shortest valid path on permissible routes | Self-implemented A* (haversine heuristic) on the OSM pedestrian network, drawn on the map | [backend/app/routing.py](backend/app/routing.py) |
+| Bonus: path updates as the position changes | Route trimmed while the player is on it; recomputed with A* when they deviate | [backend/app/game.py](backend/app/game.py) |
+| Goal generated relative to the player on game start | `POST /api/games` takes the player's current position | [backend/app/main.py](backend/app/main.py) |
+| Position from the host machine | Browser Geolocation API on the host (OS location services); a container can't read location hardware | [frontend/app.js](frontend/app.js) |
+| Runs locally, no additional cloud dependencies | Bundled walk graph, no API keys or paid services; routing works offline | [backend/data/](backend/data/) |
+| Clear setup docs, Docker Compose | One command: `docker compose up --build -d` | [docker-compose.yml](docker-compose.yml) |
+| Ready for scaling and production | Healthchecks, restart policy, non-root user, pinned deps, validated config, logging; domain logic separate from transport | [backend/Dockerfile](backend/Dockerfile), [Scaling](#scaling) |
+
 ## Features
 
-- **Live player marker**: a soccer ball shown at the player's real-time location.
-- **Goal generation**: on game start, a static goal marker is placed within a configurable radius of the player.
-- **Shortest path**: the shortest walkable path from player to goal is computed and drawn on the map.
-- **Goal detection**: "Goal reached" feedback when the player is within a proximity threshold.
-- **Dynamic re-routing (bonus)**: the route updates as the player moves. It is trimmed while on route and recomputed with A* when the player deviates.
-- **Coverage**: central Tel Aviv-Yafo (pre-bundled walk graph, works fully offline). Outside it, the game shows a clear error.
-- **Demo mode**: off by default, marked with a DEMO badge. Before the game, click the map to set the start point; during the game, arrow keys walk the ball 10 m per press. For demoing on a stationary laptop.
+- **Coverage**: central Tel Aviv-Yafo (pre-bundled walk graph). Outside it, the game shows a clear error.
+- **HUD**: distance to the goal, straight line and walking, plus GPS accuracy.
+- **Demo mode**: off by default, marked with a DEMO badge. Before the game, click the map to set the start point; during the game, arrow keys walk the ball 10 m per press.
+- **Auto-walk (demo)**: moves the ball along the live route, ~5 m every 500 ms; stops at the goal, on an arrow key, or on a second click.
 
 ## Quick start
 
@@ -24,20 +36,18 @@ docker compose ps              # backend should be "healthy"
 docker compose down            # stop
 ```
 
-Open <http://localhost:8080> (or your `FRONTEND_PORT`) and allow location access when the browser asks. The API runs on <http://localhost:8000> (fixed port). No `.env` is needed; copy `.env.example` to `.env` to override the defaults.
-
-Run the tests in the container: `docker compose run --rm backend python -m pytest`.
+Open <http://localhost:8080> (or your `FRONTEND_PORT`) and allow location access. The API runs on <http://localhost:8000> (fixed port). No `.env` is needed; copy `.env.example` to `.env` to override the defaults.
 
 ## Troubleshooting location
 
 Geolocation works on `localhost` without HTTPS, since browsers treat it as a secure context.
-If the ball does not appear, check that location services are enabled at the OS level:
+If the ball does not appear, check that location services are enabled:
 
 - **Windows 11**: Settings → Privacy & security → Location → turn on *Location services* and *Let desktop apps access your location*.
 - **macOS**: System Settings → Privacy & Security → Location Services → turn it on and enable it for your browser.
 - **Browser**: click the icon left of the address bar and set *Location* to *Allow* for the site, then reload.
 
-Desktop machines without GPS use Wi-Fi/IP-based positioning, which can be off by tens of meters. Use demo mode if needed.
+Desktops without GPS use Wi-Fi/IP positioning, which can be off by tens to hundreds of meters. Use demo mode if needed.
 
 ## Configuration
 
@@ -57,14 +67,15 @@ All parameters are set through environment variables (see `.env.example`).
 
 ```
 ┌──────────────────────────────┐
-│ Browser (Leaflet + JS)       │
+│ Browser (Leaflet + JS)       │  page served by nginx (:8080)
 │  Geolocation.watchPosition   │
 └──────────────┬───────────────┘
-               │ WebSocket: position ↑ / route, goal, status ↓
+               │ REST: start game → goal + route
+               │ WebSocket: position ↑ / state + route ↓
 ┌──────────────▼───────────────┐
-│ FastAPI backend              │
-│  game state, goal detection, │
-│  deviation check / re-route  │
+│ FastAPI backend (:8000)      │
+│  sessions, goal detection,   │
+│  route trim / re-route       │
 └──────────────┬───────────────┘
                │
 ┌──────────────▼───────────────┐
@@ -82,10 +93,10 @@ Backend modules (`backend/app/`):
 | `config.py` | Settings from env vars, validated at startup |
 | `geo.py` | Haversine distance, destination point, point-to-segment distance |
 | `graph_store.py` | Loads the bundled graph once; coverage check |
-| `routing.py` | Nearest node, A*, route coordinates |
+| `routing.py` | Nearest node, A*, route coordinates, graph bounds |
 | `goal.py` | Goal candidate sampling, snapping and reachability |
 | `game.py` | Game session: goal, route updates and rerouting, progress, goal detection (no FastAPI) |
-| `main.py` | FastAPI app: REST endpoints, WebSocket, in-memory session store |
+| `main.py` | FastAPI app: REST endpoints, WebSocket, in-memory session store, logging |
 
 Frontend (`frontend/`, no build): `index.html`, `app.js` (map, geolocation, WebSocket, demo mode), `style.css`. It calls the backend at `http://<page host>:8000`.
 
@@ -102,7 +113,7 @@ Interactive docs: <http://localhost:8000/docs>.
 
 ### WebSocket messages
 
-Client → server, on every position fix (`accuracy` optional, display-only):
+Client → server, on every position fix. `accuracy` is optional; it filters walked-distance jitter and widens the reroute threshold, but never affects goal detection:
 
 ```json
 {"lat": 32.0809, "lon": 34.7806, "accuracy": 35}
@@ -133,7 +144,7 @@ Server → client:
 | 6 | Goal detection is server-side | Single source of truth for game state. |
 | 7 | Goal: uniform random point in radius, min distance, snapped to nearest walkable node, guaranteed reachable | Fair placement, avoids trivial goals, never unreachable. |
 | 8 | Re-route only when deviation exceeds a configurable threshold (see #44–45) | Avoids recomputing on GPS jitter. |
-| 9 | Demo mode: labeled, off by default (click/arrow keys; auto-walk optional, not built yet) | Demo on a stationary laptop; real location stays the default. |
+| 9 | Demo mode: labeled, off by default (click/arrow keys; auto-walk built, see #50) | Demo on a stationary laptop; real location stays the default. |
 | 10 | ~~Road graph downloaded on game start and cached; Tel Aviv pre-bundled~~ (superseded by #19) | Fast repeat starts; works offline for the main area. |
 | 11 | All parameters from environment variables | Configurable without code changes. |
 | 12 | Run locally with `docker compose up`; no paid services or API keys | One-command setup, free to run. |
@@ -173,6 +184,10 @@ Server → client:
 | 46 | Outside coverage keeps the last route | The game degrades gracefully instead of failing. |
 | 47 | Monotonic trimming | A route that doubles back can't skip ahead. |
 | 48 | Reroute A* in a worker thread | Doesn't block other WebSocket messages. |
+| 49 | Leaflet vendored locally | Fewer external dependencies; only map tiles need internet. |
+| 50 | Auto-walk uses the same setPosition → WebSocket path and follows the live route | Demo exercises trimming, rerouting and goal detection end to end. |
+| 51 | Walking distance in HUD | What the player actually needs; straight line kept for transparency. |
+| 52 | Trim to the nearest segment in the first in-threshold run (refines #47) | Passed corners are dropped; a route that doubles back still can't skip ahead. |
 
 ## Local development without Docker (Windows)
 
@@ -182,41 +197,22 @@ From the repo root:
 py -m venv .venv
 .venv\Scripts\Activate.ps1
 py -m pip install -r backend/requirements.txt
-copy .env.example .env   # optional; defaults apply without it
-py -m pytest
+py -m uvicorn app.main:app --app-dir backend --reload   # backend, terminal 1
+py -m http.server 8080 --directory frontend             # frontend, terminal 2
 ```
 
-With the venv activated, `py` uses the venv interpreter.
+With the venv activated, `py` uses the venv interpreter. Open <http://localhost:8080>; API docs at <http://localhost:8000/docs>.
 
-The walk graph is already bundled in `backend/data/`. To rebuild it (needs internet):
-
-```powershell
-py backend/scripts/build_graph.py
-```
-
-Run the backend (from the repo root, venv activated):
-
-```powershell
-py -m uvicorn app.main:app --app-dir backend --reload
-```
-
-API docs: <http://localhost:8000/docs>. Serve the frontend in a second terminal:
-
-```powershell
-py -m http.server 8080 --directory frontend
-```
-
-Open <http://localhost:8080> and allow location access. Demo mode: tick **Demo**, click the map to place the ball, and use the arrow keys to move it.
+The walk graph is bundled in `backend/data/`. To rebuild it (needs internet): `py backend/scripts/build_graph.py`.
 
 ## Testing
 
-From the repo root (`pytest.ini` puts `backend/` on the import path):
+Tests are derived from the assignment requirements: for each major component, a normal case, the most important edge case, and invalid input.
 
 ```powershell
-py -m pytest
+py -m pytest                                       # local (pytest.ini puts backend/ on the import path)
+docker compose run --rm backend python -m pytest   # in the container
 ```
-
-Tests are derived from the assignment requirements: for each major component, a normal case, the most important edge case, and invalid input.
 
 ## Scaling
 
@@ -227,13 +223,13 @@ Tests are derived from the assignment requirements: for each major component, a 
 
 ## Known limitations / next steps
 
-- Location accuracy depends on the device; desktop positioning can be coarse.
-- Coverage is central Tel Aviv-Yafo only (lat 32.045–32.095, lon 34.760–34.800). The player must be at least `GOAL_RADIUS_M` inside its edges. Next step: dynamic per-location graph loading.
+- Coverage is central Tel Aviv-Yafo only (lat 32.045–32.095, lon 34.760–34.800); the player must be at least `GOAL_RADIUS_M` inside its edges. Next: dynamic per-location graph loading.
+- Only the OSM map tiles need internet; Leaflet is vendored in `frontend/vendor/` and routing works offline.
 - Geolocation works only on `localhost` over HTTP; other devices need HTTPS.
-- Single player only.
+- With real desktop location (Wi-Fi accuracy), reroutes are rare by design; demo mode shows them.
+- Manual demo walking needs arrow keys; on phones, use Auto-walk.
 - Sessions are kept in memory with no expiry (Part 2: TTL / Redis).
+- Two tabs on the same game can update the session concurrently (Part 2: per-session lock / Redis).
 - Only direct dependencies are pinned; transitive versions can drift (next: a full lock file).
 - Backend image is ~690 MB, mostly the OSMnx/geopandas stack.
-- Demo walking needs arrow keys; no phone support.
-- With real desktop location (Wi-Fi accuracy), reroutes are rare by design; demo mode shows them.
 - **Part 2 (not in scope):** multiplayer, shared state in Redis, CI/CD pipeline.

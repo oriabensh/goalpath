@@ -4,6 +4,8 @@ const API = `http://${location.hostname}:8000`;
 const WS_BASE = `ws://${location.hostname}:8000`;
 const TEL_AVIV = [32.0809, 34.7806];
 const DEMO_STEP_M = 10;
+const AUTO_WALK_STEP_M = 5;
+const AUTO_WALK_INTERVAL_MS = 500;
 const ROUTE_COLOR = "#1f6feb";
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +29,7 @@ const state = {
   ws: null,
   finished: false,
   layers: [], // goal marker + route lines of the current game
+  route: null, // latest route from the server, [[lat, lon], ...]
 };
 let ball = null;
 let accuracyCircle = null;
@@ -125,21 +128,23 @@ function drawGame(data) {
     L.polyline([], { color: ROUTE_COLOR, weight: 5, opacity: 0.85 }),
     L.marker(goal, { icon: goalIcon }),
   ].map((layer) => layer.addTo(map));
-  drawRoute(route);
+  drawRoute(route, data.route_length_m);
   map.fitBounds(L.latLngBounds(route).extend(goal), { padding: [40, 40] });
   updateDemoHint();
 }
 
-function drawRoute(route) {
+function drawRoute(route, lengthM) {
+  state.route = route; // latest route; auto-walk follows it
   const [connector, street] = state.layers;
   connector.setLatLngs(route.slice(0, 2));
   street.setLatLngs(route.slice(1));
+  $("walk").textContent = Math.round(lengthM);
 }
 
 function onState(msg) {
   $("dist").textContent = Math.round(msg.distance_to_goal_m);
   if (!state.layers.length) return;
-  drawRoute(msg.route);
+  drawRoute(msg.route, msg.route_length_m);
   if (msg.rerouted) showToast("Recalculating route");
   $("warning").hidden = !msg.off_coverage;
 }
@@ -160,6 +165,7 @@ function resetGame() {
   state.layers = [];
   state.finished = false;
   $("dist").textContent = "–";
+  $("walk").textContent = "–";
   $("warning").hidden = true;
   $("goal-overlay").hidden = true;
   updateDemoHint();
@@ -221,6 +227,7 @@ function setDemo(on) {
     showCoverageArea();
   } else {
     setHint(state.lastReal ? "" : "Waiting for your location…");
+    updateDemoHint(); // hides Auto-walk and stops it
     if (coverageRect) coverageRect.remove();
     coverageRect = null;
     if (state.lastReal) {
@@ -256,7 +263,47 @@ async function showCoverageArea() {
 const inGame = () => state.layers.length > 0 && !state.finished;
 
 function updateDemoHint() {
-  if (state.demo) setHint(inGame() ? "Use arrow keys to walk" : "Click the map to set your start point");
+  const walking = state.demo && inGame();
+  $("autowalk").hidden = !walking; // Auto-walk only during a game in demo mode
+  if (!walking) stopAutoWalk();
+  if (state.demo) setHint(walking ? "Use arrow keys to walk" : "Click the map to set your start point");
+}
+
+// Auto-walk: steps along the latest route through the same setPosition -> WebSocket path as arrow keys.
+let autoWalkTimer = null;
+
+function toggleAutoWalk() {
+  if (autoWalkTimer) return stopAutoWalk();
+  autoWalkTimer = setInterval(autoWalkStep, AUTO_WALK_INTERVAL_MS);
+  $("autowalk").textContent = "Stop walking";
+}
+
+function stopAutoWalk() {
+  clearInterval(autoWalkTimer);
+  autoWalkTimer = null;
+  $("autowalk").textContent = "Auto-walk";
+}
+
+function autoWalkStep() {
+  if (!state.demo || !inGame() || !state.ws || !state.pos || !state.route) return stopAutoWalk();
+  // Walk from the ball's current position along the rest of the route.
+  const points = [[state.pos.lat, state.pos.lon], ...state.route.slice(1)];
+  const [lat, lon] = pointAlong(points, AUTO_WALK_STEP_M);
+  setPosition(lat, lon, null);
+}
+
+function pointAlong(points, distanceM) {
+  let left = distanceM;
+  for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]];
+    const seg = map.distance(a, b);
+    if (seg >= left) {
+      const t = seg === 0 ? 0 : left / seg;
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+    left -= seg;
+  }
+  return points[points.length - 1];
 }
 
 // Click = choose a start point (before the game only); arrows = walking. No teleporting mid-game.
@@ -269,6 +316,7 @@ document.addEventListener("keydown", (e) => {
   const dir = { ArrowUp: [1, 0], ArrowDown: [-1, 0], ArrowRight: [0, 1], ArrowLeft: [0, -1] }[e.key];
   if (!dir) return;
   e.preventDefault();
+  stopAutoWalk(); // manual walking takes over
   const mPerDegLat = 111320;
   const mPerDegLon = mPerDegLat * Math.cos((state.pos.lat * Math.PI) / 180);
   setPosition(state.pos.lat + (dir[0] * DEMO_STEP_M) / mPerDegLat, state.pos.lon + (dir[1] * DEMO_STEP_M) / mPerDegLon, null);
@@ -344,4 +392,5 @@ function showCoverageError(code) {
 $("start").onclick = startGame;
 $("play-again").onclick = startGame;
 $("demo-toggle").onchange = (e) => setDemo(e.target.checked);
+$("autowalk").onclick = toggleAutoWalk;
 startLocation();
